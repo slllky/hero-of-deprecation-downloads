@@ -22,7 +22,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --http1.1 --fail --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 180 --retry-max-time 540 'https://hero-of-deprecation-artwork.slllky.chatgpt.site/staging/Hero-of-Deprecation-0.2.3-Windows-x64.zip' --output Hero-of-Deprecation-0.2.3-Windows-x64.zip
+          python - <<'RANGE_DOWNLOAD'
+          import concurrent.futures, hashlib, pathlib, shutil, time, urllib.request
+          url='https://hero-of-deprecation-artwork.slllky.chatgpt.site/staging/Hero-of-Deprecation-0.2.3-Windows-x64.zip'
+          size=487003281
+          part_size=16777216
+          hashes=['ca84c0944661f13a1cf9477229bfc3d6b5fff016f8f81a4cb15e17f906d26c15', '3ace2653fe291751e71cde527587f1e00f876d2b7a96094fdf717f605022ae4c', '772b3be6b227a171b9d1ec49b4a3f37ec351e6cdc2c64758d545cdaf780248d7', '3d805c966ce2f5b68ef5e084b041ebcffecf7b765439469ade49328499922634', '924e0aed12bfbeab6cf6d6c12c54af219ec1fae9613cc2bfcbfe7f3eb0e1565e', 'c1b4e7edf577421df052766799e8173acbdf00d19f0327b44174023721baac4f', '2e3d99073454f09160603380e7733323ce50c020c87cdf9748acbd9d45c67f09', 'f7ac68a424a8981353c74c62a9281e8a3d519a38c3c05e3bac23dbe080ddca90', 'f58561b54b0b818631af8eabf4866867829dbeac14c163d718c73daea2b30b88', '2a41b3734bb199046c2a2b4190cc6861acfc0a596dac09a474d2c5a20a634d42', 'd0ccf0496288d3c71e248f17173e78c7416c83ae73394bab8e758c858a237bcb', '0174f393249e70166fac2d1dac629ef1d03f33c899727b0a1227cddd95d6ca30', 'ac03bbd7a3e33ecfaba873426a0673f183ce8ed81bdbd49b282ed7851c180a87', '13182f7b2229eb73ef02a3b7d2106c7338d7e21f169eea73a524163a1ee2c481', '9405f1f8ffc07c03c0f0d45c0a064570a0a3d149f232e9daf9a8547ea906284a', '92d0df6ae45e4e62976c63548c66f92086c8c064ac19573e952466b3e57e82b0', '700dc60b9ed15b8348ab32fac8b2672f96b93f90544f98b753e55dc433df597f', 'dd7d389bdedfe6aec874a8853e557be6e8811ff048bf65f8ec8690221bb97f3b', '0069983291f02aab005cf64ba6e9d533f34a588adcea88329345385d6aecc9bc', 'a28e7b01d2c7201854313f48e4a044e856bf283b836a93cc3b0d5191f05cf7e3', 'c5c139fbcc2b992d214a85b1b984557db6c6a4e491a644402a57885e8a0c7d82', 'aab64601a556daf948eb8939dd8b987fbbf3fe63998ae98b2b47d8969b4e8ae5', 'd038038dc47fbd2519f4d9b60d97a5a17f47bdd061e79b13c953d8aa87868fd0', 'f4d6d0686b146636b345bcfcf4546f0cfcaa5757fffc5acff8c9c6a588b6eb47', 'fcdd932b092ca2227c2279716cb5bd763648d62379f4b029ec75595d294e2efd', 'd17e46d642c4bc563accd9947c95797119b939b70538f1f4ce441c1e96988b76', 'ff1b5cc32e2fd1c30afe073efbddfc7624429553c4e191115db65734b1f0068c', 'a93a36477a3cc4c1dff587b35b5298b08e1bbe3b5df8b5da41bbbaa6063e8b10', 'a033bfef820fc4a1471f08ac7f2d5fbf664e6421297c11ab4b7b0de9cdd92cb3', '33b6df56092dc9b35db1b3e6be2b249e04958cb3739464a43994bde63c007814']
+          folder=pathlib.Path('release-parts')
+          folder.mkdir()
+          def download(index):
+              start=index*part_size
+              end=min(size,start+part_size)-1
+              target=folder/f'{index:03d}'
+              for attempt in range(3):
+                  try:
+                      request=urllib.request.Request(url,headers={'Range':f'bytes={start}-{end}','User-Agent':'Hero-of-Deprecation-Release','Cache-Control':'no-cache'})
+                      with urllib.request.urlopen(request,timeout=60) as response:
+                          assert response.status==206, response.status
+                          assert response.headers.get('Content-Range')==f'bytes {start}-{end}/{size}'
+                          data=response.read(end-start+2)
+                      assert len(data)==end-start+1
+                      assert hashlib.sha256(data).hexdigest()==hashes[index]
+                      target.write_bytes(data)
+                      print(f'Verified part {index+1}/{len(hashes)}',flush=True)
+                      return
+                  except Exception:
+                      if attempt==2: raise
+                      time.sleep(2)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+              list(pool.map(download,range(len(hashes))))
+          with pathlib.Path('Hero-of-Deprecation-0.2.3-Windows-x64.zip').open('wb') as output:
+              for index in range(len(hashes)):
+                  with (folder/f'{index:03d}').open('rb') as part:
+                      shutil.copyfileobj(part,output)
+          assert pathlib.Path('Hero-of-Deprecation-0.2.3-Windows-x64.zip').stat().st_size==size
+          RANGE_DOWNLOAD
           echo 'df6a11d71ad8520602597fca64b9eb84053baacb0674dcf398d4898ac088cf3f  Hero-of-Deprecation-0.2.3-Windows-x64.zip' > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
           unzip -tq Hero-of-Deprecation-0.2.3-Windows-x64.zip
@@ -42,40 +76,43 @@ jobs:
           NOTES
             gh release create v0.2.3 --draft --title 'Hero of Deprecation 0.2.3 — Windows' --notes-file release-notes.txt
           fi
-          timeout 90 gh release upload v0.2.3 SHA256SUMS.txt --clobber
           release_id=$(gh api "repos/${GH_REPO}/releases" --jq '.[] | select(.tag_name == "v0.2.3") | .id')
           test -n "$release_id"
-          file=Hero-of-Deprecation-0.2.3-Windows-x64.zip
-          expected_digest=sha256:df6a11d71ad8520602597fca64b9eb84053baacb0674dcf398d4898ac088cf3f
-          uploaded=false
-          for attempt in 1 2; do
-            gh api "repos/${GH_REPO}/releases/${release_id}/assets" > assets.json
-            if jq -e --arg file "$file" --arg digest "$expected_digest" '.[] | select(.name == $file and .state == "uploaded" and .size == 487003281 and .digest == $digest)' assets.json >/dev/null; then
-              uploaded=true
-              break
-            fi
-            existing_id=$(jq -r --arg file "$file" '.[] | select(.name == $file) | .id' assets.json)
-            if [ -n "$existing_id" ]; then
-              jq -e --arg file "$file" '.[] | select(.name == $file and (.state == "starter" or .size == 0))' assets.json >/dev/null
-              gh api --method DELETE "repos/${GH_REPO}/releases/assets/${existing_id}"
-            fi
-            upload_url=$(gh api "repos/${GH_REPO}/releases/${release_id}" --jq '.upload_url | split("{")[0]')
-            test "$upload_url" = "https://uploads.github.com/repos/${GH_REPO}/releases/${release_id}/assets"
-            printf 'Uploading complete Windows ZIP, attempt %s\n' "$attempt"
-            if curl --http1.1 --fail-with-body --connect-timeout 20 --max-time 300 --speed-limit 1024 --speed-time 45 \
-              --header "Authorization: Bearer ${GH_TOKEN}" \
-              --header 'Accept: application/vnd.github+json' \
-              --header 'X-GitHub-Api-Version: 2022-11-28' \
-              --header 'Content-Type: application/zip' --header 'Expect:' \
-              --data-binary "@${file}" --output upload-response.json \
-              --write-out 'Upload HTTP %{http_code}; %{size_upload} bytes; %{speed_upload} bytes/sec; %{time_total} seconds\n' \
-              "${upload_url}?name=${file}"; then
-              jq -e --arg file "$file" --arg digest "$expected_digest" '.name == $file and .state == "uploaded" and .size == 487003281 and .digest == $digest' upload-response.json
-              uploaded=true
-              break
-            fi
-            jq '{message, state, size, digest}' upload-response.json 2>/dev/null || true
+          for file in SHA256SUMS.txt Hero-of-Deprecation-0.2.3-Windows-x64.zip; do
+            expected_bytes=$(stat --format=%s "$file")
+            expected_digest="sha256:$(sha256sum "$file" | cut -d ' ' -f 1)"
+            content_type=application/zip
+            transfer_limit=300
+            if [ "$file" = SHA256SUMS.txt ]; then content_type=text/plain; transfer_limit=60; fi
+            uploaded=false
+            for attempt in 1 2; do
+              gh api "repos/${GH_REPO}/releases/${release_id}/assets" > assets.json
+              if jq -e --arg file "$file" --arg digest "$expected_digest" --argjson bytes "$expected_bytes" '.[] | select(.name == $file and .state == "uploaded" and .size == $bytes and .digest == $digest)' assets.json >/dev/null; then
+                uploaded=true
+                break
+              fi
+              existing_id=$(jq -r --arg file "$file" '.[] | select(.name == $file) | .id' assets.json)
+              if [ -n "$existing_id" ]; then
+                jq -e --arg file "$file" '.[] | select(.name == $file and (.state == "starter" or .size == 0))' assets.json >/dev/null
+                gh api --method DELETE "repos/${GH_REPO}/releases/assets/${existing_id}"
+              fi
+              upload_url=$(gh api "repos/${GH_REPO}/releases/${release_id}" --jq '.upload_url | split("{")[0]')
+              test "$upload_url" = "https://uploads.github.com/repos/${GH_REPO}/releases/${release_id}/assets"
+              printf 'Uploading %s, attempt %s\n' "$file" "$attempt"
+              if curl --http1.1 --fail-with-body --connect-timeout 20 --max-time "$transfer_limit" --speed-limit 1024 --speed-time 45 \
+                --header "Authorization: Bearer ${GH_TOKEN}" \
+                --header 'Accept: application/vnd.github+json' \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --header "Content-Type: ${content_type}" --header 'Expect:' \
+                --data-binary "@${file}" --output upload-response.json \
+                --write-out 'Upload HTTP %{http_code}; %{size_upload} bytes; %{speed_upload} bytes/sec; %{time_total} seconds\n' \
+                "${upload_url}?name=${file}"; then
+                jq -e --arg file "$file" --arg digest "$expected_digest" --argjson bytes "$expected_bytes" '.name == $file and .state == "uploaded" and .size == $bytes and .digest == $digest' upload-response.json
+                uploaded=true
+                break
+              fi
+              jq '{message, state, size, digest}' upload-response.json 2>/dev/null || true
+            done
+            test "$uploaded" = true
           done
-          test "$uploaded" = true
           gh release edit v0.2.3 --draft=false --latest
-
