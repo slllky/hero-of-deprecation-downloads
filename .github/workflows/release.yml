@@ -21,7 +21,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --location --retry 3 --max-time 600 'https://hero-of-deprecation-artwork.slllky.chatgpt.site/staging/Hero-of-Deprecation-0.2.3-Windows-x64.zip' --output Hero-of-Deprecation-0.2.3-Windows-x64.zip
+          curl --http1.1 --fail --location --retry 3 --retry-all-errors --connect-timeout 20 --max-time 180 --retry-max-time 540 'https://hero-of-deprecation-artwork.slllky.chatgpt.site/staging/Hero-of-Deprecation-0.2.3-Windows-x64.zip' --output Hero-of-Deprecation-0.2.3-Windows-x64.zip
           echo 'df6a11d71ad8520602597fca64b9eb84053baacb0674dcf398d4898ac088cf3f  Hero-of-Deprecation-0.2.3-Windows-x64.zip' > SHA256SUMS.txt
           sha256sum --check SHA256SUMS.txt
           unzip -tq Hero-of-Deprecation-0.2.3-Windows-x64.zip
@@ -77,3 +77,4 @@ jobs:
           done
           test "$uploaded" = true
           gh release edit v0.2.3 --draft=false --latest
+
