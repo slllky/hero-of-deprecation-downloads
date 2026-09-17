@@ -8,7 +8,7 @@ permissions:
   contents: write
 concurrency:
   group: desktop-release-0.2.3
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -41,5 +41,39 @@ jobs:
           NOTES
             gh release create v0.2.3 --draft --title 'Hero of Deprecation 0.2.3 — Windows' --notes-file release-notes.txt
           fi
-          gh release upload v0.2.3 Hero-of-Deprecation-0.2.3-Windows-x64.zip SHA256SUMS.txt --clobber
+          gh release upload v0.2.3 SHA256SUMS.txt --clobber
+          release_id=$(gh api "repos/${GH_REPO}/releases" --jq '.[] | select(.tag_name == "v0.2.3") | .id')
+          test -n "$release_id"
+          file=Hero-of-Deprecation-0.2.3-Windows-x64.zip
+          expected_digest=sha256:df6a11d71ad8520602597fca64b9eb84053baacb0674dcf398d4898ac088cf3f
+          uploaded=false
+          for attempt in 1 2; do
+            gh api "repos/${GH_REPO}/releases/${release_id}/assets" > assets.json
+            if jq -e --arg file "$file" --arg digest "$expected_digest" '.[] | select(.name == $file and .state == "uploaded" and .size == 487003281 and .digest == $digest)' assets.json >/dev/null; then
+              uploaded=true
+              break
+            fi
+            existing_id=$(jq -r --arg file "$file" '.[] | select(.name == $file) | .id' assets.json)
+            if [ -n "$existing_id" ]; then
+              jq -e --arg file "$file" '.[] | select(.name == $file and (.state == "starter" or .size == 0))' assets.json >/dev/null
+              gh api --method DELETE "repos/${GH_REPO}/releases/assets/${existing_id}"
+            fi
+            upload_url=$(gh api "repos/${GH_REPO}/releases/${release_id}" --jq '.upload_url | split("{")[0]')
+            test "$upload_url" = "https://uploads.github.com/repos/${GH_REPO}/releases/${release_id}/assets"
+            printf 'Uploading complete Windows ZIP, attempt %s\n' "$attempt"
+            if curl --http1.1 --fail-with-body --connect-timeout 20 --max-time 300 --speed-limit 1024 --speed-time 45 \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'Accept: application/vnd.github+json' \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --header 'Content-Type: application/zip' --header 'Expect:' \
+              --data-binary "@${file}" --output upload-response.json \
+              --write-out 'Upload HTTP %{http_code}; %{size_upload} bytes; %{speed_upload} bytes/sec; %{time_total} seconds\n' \
+              "${upload_url}?name=${file}"; then
+              jq -e --arg file "$file" --arg digest "$expected_digest" '.name == $file and .state == "uploaded" and .size == 487003281 and .digest == $digest' upload-response.json
+              uploaded=true
+              break
+            fi
+            jq '{message, state, size, digest}' upload-response.json 2>/dev/null || true
+          done
+          test "$uploaded" = true
           gh release edit v0.2.3 --draft=false --latest
