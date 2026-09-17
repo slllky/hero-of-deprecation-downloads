@@ -1,0 +1,45 @@
+name: Publish verified Windows game
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/release.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: desktop-release-0.2.3
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download and verify the complete installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --max-time 600 'https://hero-of-deprecation-artwork.slllky.chatgpt.site/staging/Hero-of-Deprecation-0.2.3-Windows-x64.zip' --output Hero-of-Deprecation-0.2.3-Windows-x64.zip
+          echo 'df6a11d71ad8520602597fca64b9eb84053baacb0674dcf398d4898ac088cf3f  Hero-of-Deprecation-0.2.3-Windows-x64.zip' > SHA256SUMS.txt
+          sha256sum --check SHA256SUMS.txt
+          unzip -tq Hero-of-Deprecation-0.2.3-Windows-x64.zip
+      - name: Publish complete Windows release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view v0.2.3 --json isDraft >/dev/null 2>&1; then
+            if [ "$(gh release view v0.2.3 --json isDraft --jq .isDraft)" != true ]; then
+              gh api "repos/${GH_REPO}/releases/tags/v0.2.3" --jq '.assets[] | select(.name == "Hero-of-Deprecation-0.2.3-Windows-x64.zip") | .digest' | grep -Fx 'sha256:df6a11d71ad8520602597fca64b9eb84053baacb0674dcf398d4898ac088cf3f'
+              exit 0
+            fi
+          else
+            cat > release-notes.txt <<'NOTES'
+          Complete Windows edition of Hero of Deprecation, Chapters One–Four.
+          Extract the entire ZIP, then open Hero of Deprecation.exe. All artwork, portraits, music and the Slllky Games intro are included locally.
+          NOTES
+            gh release create v0.2.3 --draft --title 'Hero of Deprecation 0.2.3 — Windows' --notes-file release-notes.txt
+          fi
+          gh release upload v0.2.3 Hero-of-Deprecation-0.2.3-Windows-x64.zip SHA256SUMS.txt --clobber
+          gh release edit v0.2.3 --draft=false --latest
