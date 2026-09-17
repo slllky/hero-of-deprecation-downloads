@@ -16,6 +16,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      GODEBUG: http2client=0
     steps:
       - name: Download and verify the complete installer
         shell: bash
@@ -41,7 +42,7 @@ jobs:
           NOTES
             gh release create v0.2.3 --draft --title 'Hero of Deprecation 0.2.3 — Windows' --notes-file release-notes.txt
           fi
-          gh release upload v0.2.3 SHA256SUMS.txt --clobber
+          timeout 90 gh release upload v0.2.3 SHA256SUMS.txt --clobber
           release_id=$(gh api "repos/${GH_REPO}/releases" --jq '.[] | select(.tag_name == "v0.2.3") | .id')
           test -n "$release_id"
           file=Hero-of-Deprecation-0.2.3-Windows-x64.zip
